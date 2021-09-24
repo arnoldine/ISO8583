@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using RestSharp;
 using System;
 using System.Collections.Generic;
@@ -6,13 +6,12 @@ using System.Net.Sockets;
 using System.Text;
 using System.IO;
 using System.Data;
+using Microsoft.Owin.Hosting;
 using System.Net;
 using System.Threading;
 using System.Data.SQLite;
-using System.Data.Sql;
-using System.Security.Permissions;
 using System.Data.SqlClient;
-
+using Owin;
 namespace ISO8583_Test
 {
     // State object for reading client data asynchronously
@@ -30,76 +29,20 @@ namespace ISO8583_Test
         public StringBuilder sb = new StringBuilder();
         
     }
-    public class tokenres
-    {
-        public string access_token { get; set; }
-        public string token_type { get; set; }
-        public int expires_in { get; set; }
-    }
-    public class respo
-    {
-        public string status { get; set; }
-        public string message { get; set; }
-        public List<Datainfo> data { get; set; }
-        public string responsecode { get; set; }
-    }
-    public class Datainfo
-    {
-        public string accountnumber { get; set; }
-        public float balance { get; set; }
-        public float balanceavailable { get; set; }
-        public string currency { get; set; }
-        public int branchid { get; set; }
-        public string clientName { get; set; }
-    }
-    public class trobj
-    {
-        public string status { get; set; }
-        public string message { get; set; }
-        public List<Transids> data { get; set; }
-        public string responsecode { get; set; }
-    }
-    public class Transids
-    {
-        public string referenceId { get; set; }
-        public string externalReference { get; set; }
-    }
-    public class Statement
-    {
-        public string rowno { get; set; }
-        public string contractnumber { get; set; }
-        public string amount { get; set; }
-        public string transactiontype { get; set; }
-        public string currency { get; set; }
-        public string description { get; set; }
-        public string valueDate { get; set; }
-    }
-    public class stobj
-    {
-        public string status { get; set; }
-        public string message { get; set; }
-        public Statement[] data { get; set; }
-        public string responsecode { get; set; }
-
-    }
-    public class custinfo
-    {
-        public string accountNumber { get; set; }
-        public string balance { get; set; }
-        public string balanceAvailable { get; set; }
-        public string clientName { get; set; }
-        public string currency { get; set; }
-        public string clientCode { get; set; }
-        public string branchid { get; set; }
-    }
+   
 
     public class Program
     {
         public static string clientnm;
-        public const string URL = "https://192.168.70.15:443/token";
+        public static string URL = "https://127.0.0.1:443";
         public static string urlParameters = "?grant_type=password&username=AD00101&password=Seekr3t!!!";
+        public static string L_CON_STR = "Data Source=localdb;Initial Catalog=trxlogs;User ID=Usapi;Password=*****"; //live code
+        public static string T_CON_STR = "Data Source=.\\;Initial Catalog=trxlogs;Integrated Security=True";  //Test Code
         public static ManualResetEvent allDone = new ManualResetEvent(false);
         public static string data = null;
+        public static string CON_STR = L_CON_STR;
+        public static string apmode = null;
+        public static int cport = 9500;
         //public AsynchronousSocketListener()
         //{
         //}
@@ -109,13 +52,62 @@ namespace ISO8583_Test
         static int Main(string[] args)
         {
             var loginf = NLog.LogManager.GetCurrentClassLogger();
+            apmode = "ISO LIVE";
+            if (args.Length > 0)
+            {
+                if (args[0] == "/test")
+                {
+                    apmode = "ISO UAT";
+                    URL = "https://192.168.70.17:443";
+                   // CON_STR = T_CON_STR;
+                    cport = 8500;
+                }
+                
+                if (args[0] == "/http")
+                {
+                    apmode = "API001";
+                    string ip = null;
+                    try
+                    {
+                        ip = args[1];
+                    }
+                    catch
+                    {
+                        if (ip == null)
+                        {
+                          //  Console.ForegroundColor = ConsoleColor.DarkBlue;
+                            Console.WriteLine("ASL Quipu Connector !!!!");
+                            Console.WriteLine("{0} : No Host specified using http://localhost:8100", DateTime.Now);
+                            ip = "http://localhost:8100";
+
+                        }
+                    }
+                    //----"http://197.159.142.173:21081"
+                    using (WebApp.Start<Startup>(ip))
+
+                    {
+                        Console.ForegroundColor = ConsoleColor.DarkGreen;
+
+                        Console.WriteLine("{0} Optiplus Connector is running on :\n {1} ", DateTime.Now, ip);
+
+                        Console.WriteLine("Press any key to quit.");
+
+                        Console.ReadLine();
+
+
+                    }
+                }
+            }
+            
             loginf.Info($"Started: ");
           //savetrxnlogs("200120232", "1421000", "503000000", "150");
             createtable();
-            loginf.Info($"DOME ATM CASH:: {getaccountnum("ASL0201")}");
-            loginf.Info($"OFANKOR ATM CASH::{getaccountnum("ASL0301")}");
+          //  loginf.Info($"DOME ATM CASH:: {getaccountnum("ASL0201")}");
+          loginf.Info($"APPLICATION RUNNING IN::{apmode} MODE");
+            loginf.Info($"ON PORT:: {cport}");
+            loginf.Info($"CBS CWNET Running on:: {URL}");
           //  Console.WriteLine("Starting...{0}", DateTime.Now);
-         //   Console.WriteLine("{0}", );
+            //   Console.WriteLine("{0}", );
 
             StartListening();
             return 0;
@@ -135,8 +127,8 @@ namespace ISO8583_Test
             //localstorage.Columns.Add("Stamp", typeof(string));
             // string CON_STR = "Data Source =" + "C:\\ISO_ATM" + @"\trxnlogs.db;version=3";
             //string CON_STR = @"Data Source=.\;Initial Catalog=trxlogs;Integrated Security=True";
-           // string CON_STR = "Server=192.168.70.11;Database=trxlogs;Integrated Security=True;MultipleActiveResultSets=true;Pooling=True;Max Pool Size=2500"; //live code
-            string CON_STR = "Data Source=.\\;Initial Catalog=trxlogs;Integrated Security=True";  //Test Code
+           //
+            
             /// SQLiteConnection mconn = new SQLiteConnection("Data Source=" + dbpath);
             //using (SqliConnection connection = new SqlConnection(CON_STR))
 
@@ -200,14 +192,14 @@ namespace ISO8583_Test
         public static string getaccountnum(string atmcode)
         {
             Console.WriteLine($"ATM to Debit::{atmcode}");
-            string CON_STR = "Data Source =" + "C:\\ISO_ATM" + @"\trxnlogs.db;version=3";
+            string CON_STRl = "Data Source =" + "C:\\ISO_ATM" + @"\trxnlogs.db;version=3";
             //string CON_STR = "Data Source =trxnlogs.db;version=3";
 
             // string CON_STR = "Server=192.168.70.11;Database=trxlogs;Integrated Security=True;MultipleActiveResultSets=true;Pooling=True;Max Pool Size=2500";
             // SQLiteConnection mconn = new SQLiteConnection("Data Source=" + dbpath);
             // using (SqlConnection connection = new SqlConnection(CON_STR))
 
-            using (SQLiteConnection connection = new SQLiteConnection(CON_STR))
+            using (SQLiteConnection connection = new SQLiteConnection(CON_STRl))
 
             using (SQLiteCommand commnd = new SQLiteCommand("Select * from accountmaps where atmid='"
                 + atmcode.Trim() + "'", connection))
@@ -243,7 +235,7 @@ namespace ISO8583_Test
                     //MessageBox.Show(km.Message);
 
                 }
-                return "0000000000.0000";
+                return "85000001203936.1203";
 
             }
         }
@@ -268,11 +260,12 @@ namespace ISO8583_Test
             // Console.WriteLine("This message came in {0}", inmsg);
             createtable();
             var loginf = NLog.LogManager.GetCurrentClassLogger();
-            
+           // loginf.Info($"Received:{inmsg} ");
             f_ISO8583 iSO8583 = new f_ISO8583();
             string[] DE;
             string[] Resp;
             string without = inmsg.Substring(4, (inmsg.Length - 4));
+
           // Console.WriteLine("Got this now::{0} {1} ", (inmsg.Length - 4), (without));
             DE = iSO8583.Parse(without);
             Resp = DE;
@@ -341,19 +334,21 @@ namespace ISO8583_Test
                         // string flg = bkkbal.Length.ToString();
                         Resp[54] = bkkbalr;
                     }
+                    Resp[39] = trnsf;
                     break;
                 case "41":// NAME ENQ DR
                 case "42":// NAME ENQ CR
-                    string cnm = name_enquiry(gettoken(), DE[102]);
+                    string cnm = name_enquiry(gettoken(), DE[103]);
+                   // Resp[103] = DE[71];
                     if (cnm != "14")
                     {
                     Resp[72] = cnm;
-                        
-                     Resp[39] = "00";
+                        Console.WriteLine("..." + cnm);
+                    Resp[39] = "00";
                     goto Loro;
                     }
                     Resp[39] = "76";
-                   break;
+                    break;
                 case "44": // GIP CREDIT INWD
                     decimal amtt = Convert.ToDecimal(DE[4]) / 100;
                     if (without.Substring(0, 4) == "0420")
@@ -394,23 +389,23 @@ namespace ISO8583_Test
                         }
                
                     }
-                    //if (DE[103]== "1000100967701" )
+                    //if (DE[71]== "1000100967701" )
                     //{
                     //    Resp[39] = "39";
                     //    goto Loro;
                     //}
-                    //if (DE[103] == "2000700242604")
+                    //if (DE[71] == "2000700242604")
                     //{
                     //    Resp[39] = "39";
                     //    goto Loro;
                     //}
-                        string tres = transfaccounts(gettoken(), "85000001249936.1249", DE[103], DE[11], amtt.ToString(),DE[7]); // GIP Receiving|| DR GIP INWARDS CR CA
+                    string tres = transfaccounts(gettoken(), "85000001249936.1249", DE[103], DE[11], amtt.ToString(),DE[7]); // GIP Receiving|| DR GIP INWARDS CR CA
                     if ( tres== "00")
                     {
-                        revaccount = DE[103];
+                        revaccount = DE[71];
                         //string typr = null;
                         string tkr = gettoken();
-                        string balancer = Balancecheck(tkr, DE[103],DE[49]);
+                        string balancer = Balancecheck(tkr, DE[71],DE[49]);
                         if (balancer == "14" || balancer == "01")
                         {
                             Resp[39] = "33";
@@ -459,29 +454,41 @@ namespace ISO8583_Test
                 case "00":
                 //  break;
                 case "43":// GIP DEBIT 
+                    Console.WriteLine("We have Message Type::" + without.Substring(0, 4));
                     Decimal amount = Convert.ToDecimal(DE[4]) / 100;
-                    if (without.Substring(0, 4) == "0220")
+                    //if (without.Substring(0, 4)=="0200")
+                    //{
+
+                    //}
+                    if (without.Substring(0, 4) == "0220" || without.Substring(0, 4) == "0200"|| without.Substring(0, 4) == "0210")
                     {
-                        if (DE[3].Substring(0, 2) == "95")
-                        {
-                            goto speedy;
-                        }
+                        Console.WriteLine("Message Type::"+ without.Substring(0, 4));
+                        //if (DE[3].Substring(0, 2) == "95")
+                        //{
+                        //    goto speedy;
+                        //}
                         decimal transamt = Convert.ToDecimal(DE[4]) / 100;
                         Resp[61] = null;
                         Resp[125] = null;
                         Resp[39] = "00";
-                        string ous = transfaccounts(gettoken(),DE[102], "85000001250936.1250", DE[11], transamt.ToString(), DE[7]); // GIP DR : DR CA CR GIP Out
-                        if (ous == "00")
-                        {
-                            goto Loro;
-                        }
-                        // Resp[39] = "99";
+                        string ous = transfaccounts(gettoken(),DE[102], "85000001250936.1250", 
+                            DE[11], transamt.ToString(), DE[7]); // GIP DR : DR CA CR GIP Out
+                        //if (ous == "00")
+                        //{
+                        //    goto Loro;
+                        //}
+                        string rrBalancer = Balancecheck(gettoken(), DE[102], DE[49]);
+                        //  erred:
+                        string bkkbalr = rrBalancer;
+                        Resp[54] = rrBalancer;
+                        Resp[39] = ous;
                         goto Loro;
                     }
-                    speedy:
+
+                speedy:
 
                     //}
-                    //if (without.Substring(0, 4) == "1420")
+                    //if (without.Substring(0, 4) == "0200")
                     //{
 
                     //}
@@ -557,7 +564,12 @@ namespace ISO8583_Test
 
                     //Console.WriteLine("Reference:: {0}", DE[37]);
                     //Console.WriteLine("Transcode:: {0}", DE[3].Substring(0,2));
-                    string r = transfaccounts(gettoken(), accountnn,getaccountnum(DE[41]), DE[37],(Convert.ToDecimal(DE[4]) / 100).ToString(),"20200806");
+                    string r = transfaccounts(gettoken(), 
+                        accountnn,
+                        getaccountnum(DE[41]),
+                        DE[37],
+                        (Convert.ToDecimal(DE[4]) / 100).ToString(),
+                        "20200806");
                     if (r == "04")
                     {
                         Resp[39] = "56";
@@ -590,19 +602,9 @@ namespace ISO8583_Test
                 case "20":
                 case "01":
                 case "02":
-                  
-                    //if (DE[103] == "233241112969" || DE[103] == "0241112969")
-                    //{
-                    //    tmpp = "2000100611001";
-                    //}
-                    //if (DE[102] == "233241112969" || DE[102] == "0241112969")
-                    //{
-                    //    tmpp = "2000100611001";
-                    //}
-                    //accountnn = tmpp;
-
+                 
                     decimal amt = Convert.ToDecimal(DE[4]) / 100;
-                    if (without.Substring(0, 4) == "0220")
+                    if (without.Substring(0, 4) == "0220")   // ECOM * remember to fix
                     {
                         if (DE[3].Substring(0, 2) == "95")
                         {
@@ -622,8 +624,10 @@ namespace ISO8583_Test
                        Resp[39] = ous;
                         goto Loro;
                     }
+                    //without.Substring(0, 4) == "0222"
 
-               
+
+
                     if (without.Substring(0, 4) == "0420" || without.Substring(0, 4) == "0422")
                     {
                        // Console.WriteLine(without.Substring(0, 4));
@@ -769,7 +773,7 @@ namespace ISO8583_Test
             Uri u = new Uri(URL);
             ServicePointManager.ServerCertificateValidationCallback +=
          (sender, certificate, chain, sslPolicyErrors) => true;
-            var client = new RestClient("https://192.168.70.15:443/token");
+            var client = new RestClient(URL+"/token");
 
             var request = new RestRequest(Method.POST);
             request.AddHeader("cache-control", "no-cache");
@@ -792,7 +796,7 @@ namespace ISO8583_Test
             }
             catch
             {
-
+                Console.WriteLine("Connection to CBS Cannot be established");
             }
             return "01";
             
@@ -807,13 +811,13 @@ namespace ISO8583_Test
             ServicePointManager.ServerCertificateValidationCallback +=
         (sender, certificate, chain, sslPolicyErrors) => true;
             string bala = null;
-            var client = new RestClient("https://192.168.70.15:443/api/accounts/GetAccountBalance");
+            var client = new RestClient(URL+"/api/accounts/GetAccountBalance");
             var request = new RestRequest(Method.POST);
             request.AddHeader("cache-control", "no-cache");
             request.AddHeader("Connection", "keep-alive");
             request.AddHeader("content-length", "39");
             request.AddHeader("accept-encoding", "gzip, deflate");
-            request.AddHeader("Host", "192.168.70.15:443");
+          //  request.AddHeader("Host", "192.168.70.15:443");
             request.AddHeader("Postman-Token", "81717ea4-2db3-4778-8af1-8d78803b3f78,d3df76e4-0850-45d6-b004-4a9e9af4479c");
             request.AddHeader("Cache-Control", "no-cache");
             request.AddHeader("Accept", "*/*");
@@ -832,10 +836,17 @@ namespace ISO8583_Test
             }
             foreach(var bals in balance.data)
             {
-               bala=(bals.balance.ToString().Replace(",",""));
+               bala=bals.balance.ToString().Replace(",","");
                 clientnm = bals.clientName.ToString();
             }
-
+            //if (bala.Substring(bala.Length - 3,1) != ".")
+            //{
+            //    bala += ".00";
+            //}
+            if (bala.IndexOf('.') < 0)
+            {
+                bala += ".00";
+            }
             string typ = null;
             string i = contract.Substring(0, 1);
             if (i == "1")
@@ -847,11 +858,12 @@ namespace ISO8583_Test
                 typ = "20"; //Change back to 10
             }
             string sign = "C";
-            if (Convert.ToDecimal(bala) < 1)
+            if (Convert.ToSingle(bala) < 1)
             {
                 sign = "D";
             }
-            string jbala = bala.ToString().Replace(".", "");
+            string jjbala = bala.Replace(".", "");
+           string jbala = jjbala.Replace("$", "");
             string isobal = typ + "01" +addit + sign
                         + jbala.PadLeft(12, '0') +
                         typ + "02" +addit +
@@ -881,23 +893,16 @@ namespace ISO8583_Test
                 localstorage.AcceptChanges();
                 break;
             }
-           // Console.WriteLine(Convert.ToDouble(amt) +" || "+ revamt);
-           // Console.WriteLine(tstamp + " ||" + revtime);
-           // if ((Convert.ToDouble(amt)).ToString()!= revamt|| tstamp !=revtime)
-           // {
-           //     return string.Format("07");
-
-           //}
-           // s = foundrow[0].Table.Columns["RefId"];
+         
             Console.WriteLine("ReferenceId::{0}", refid);
              //externalid =
-            var client = new RestClient("https://192.168.70.15:443/api/transactions/CancelTransaction");
+            var client = new RestClient(URL+"/api/transactions/CancelTransaction");
             var request = new RestRequest(Method.POST);
             request.AddHeader("cache-control", "no-cache");
             request.AddHeader("Connection", "keep-alive");
             request.AddHeader("content-length", "161");
             request.AddHeader("accept-encoding", "gzip, deflate");
-            request.AddHeader("Host", "192.168.70.15");
+         
             request.AddHeader("Postman-Token", "67b01720-e042-48b1-b16c-999068a98827,543635dd-7e8c-481a-90f0-9eafa9ace288");
             request.AddHeader("Cache-Control", "no-cache");
             request.AddHeader("Accept", "*/*");
@@ -931,13 +936,13 @@ namespace ISO8583_Test
             }
             ServicePointManager.ServerCertificateValidationCallback +=
         (sender, certificate, chain, sslPolicyErrors) => true;
-            var client = new RestClient("https://192.168.70.15:443/api/accounts/GetContractStatement");
+            var client = new RestClient(URL+"/api/accounts/GetContractStatement");
             var request = new RestRequest(Method.POST);
             request.AddHeader("cache-control", "no-cache");
             request.AddHeader("Connection", "keep-alive");
             request.AddHeader("content-length", "162");
             request.AddHeader("accept-encoding", "gzip, deflate");
-            request.AddHeader("Host", "192.168.70.15:443");
+          //  request.AddHeader("Host", "192.168.70.15:443");
             request.AddHeader("Postman-Token", "47617873-b977-46cb-8fed-e12e23d164ce,3848c4d2-3b99-42bf-9b6b-a05deb8153ac");
             request.AddHeader("Cache-Control", "no-cache");
             request.AddHeader("Accept", "*/*");
@@ -953,7 +958,7 @@ namespace ISO8583_Test
             {
                 return "01";
             }
-   
+            int norecs = 0;
             foreach (Statement sth in st.data)
             {
                // string[] statm = null;
@@ -964,36 +969,33 @@ namespace ISO8583_Test
 
                 string amt = sth.amount;
                 // statm[i] += 
-                staters += qy.Substring(0, 10) + " "+desc.Substring(0, 8) + " "+ sth.transactiontype + "R" +" "+ amt.PadLeft(12, '0').Replace(".",""); //statm[i].Substring(0, 34);
+                staters += qy.Substring(0, 10) + " "+desc.Substring(0, 8) +
+                    " "+ sth.transactiontype + "R" +
+                    " "+ amt.PadLeft(12, '0').Replace(".",""); //statm[i].Substring(0, 34);
+                norecs += 1;
             }
 
-            Decimal ibal = Convert.ToDecimal(Balancecheck(token, contract,"288"));
+            string ibal = (Balancecheck(token, contract,"288"));
 
-            string balstr = null;
-            if (ibal <1)
-            {
-                balstr = "DR ";
-            }
-            else
-            {
-                balstr = "CR ";
-            }
-           
-           
-            string complet = staters + "AVAILABLE BALANCE    " + balstr+ibal.ToString().Replace(".","").PadLeft(12,'0');
+            //string balstr = null;
+            //if (ibal <1)
+            //{
+            //    balstr = "DR ";
+            //}
+            //else
+            //{
+            //    balstr = "CR ";
+            //}
+
+
+            string complet = "0"+norecs.ToString()+staters;// + "AVAILABLE BALANCE    " + ibal;//balstr+ibal.ToString().Replace(".","").PadLeft(12,'0');
             return complet;
         }
         static void savetrxnlogs(string externalReference, string referenceId, string exacct, string amount)
         {
             var loginf = NLog.LogManager.GetCurrentClassLogger();
             loginf.Info($"Logging Transactions:: ");
-            // string CON_STR = "Data Source =" + "C:\\ISO_ATM" + @"\trxnlogs.db;version=3";
-            //  string CON_STR = "Data Source=.\\;Initial Catalog=trxlogs;Integrated Security=True";
-          //  string CON_STR = "Server=192.168.70.11;Database=trxlogs;Integrated Security=True;MultipleActiveResultSets=true;Pooling=True;Max Pool Size=2500";
-            string CON_STR = "Data Source=.\\;Initial Catalog=trxlogs;Integrated Security=True";
-            // SQLiteConnection mconn = new SQLiteConnection("Data Source=" + dbpath);
-            // using (SqlConnection connection = new SqlConnection(CON_STR))
-
+          
             using (SqlConnection connection = new SqlConnection(CON_STR))
             //using (SqlConnection connection = new SqlConnection(dbpath))
             using (SqlCommand commnd = new SqlCommand("atm_addtrxn", connection))
@@ -1070,7 +1072,7 @@ namespace ISO8583_Test
 
             //}
         }
-            static string transfaccounts(string token,string frmcontract,string tocontract, string transid,string amount,string stamp) // Deposit
+      static string transfaccounts(string token,string frmcontract,string tocontract, string transid,string amount,string stamp) // Deposit
         {
 
             if (frmcontract.Length < 10)
@@ -1088,13 +1090,12 @@ namespace ISO8583_Test
             }
             ServicePointManager.ServerCertificateValidationCallback +=
         (sender, certificate, chain, sslPolicyErrors) => true;
-            var client = new RestClient("https://192.168.70.15:443/api/transactions/FundTransferIntraBank");
+            var client = new RestClient(URL+"/api/transactions/FundTransferIntraBank");
             var request = new RestRequest(Method.POST);
             request.AddHeader("cache-control", "no-cache");
             request.AddHeader("Connection", "keep-alive");
             request.AddHeader("content-length", "162");
             request.AddHeader("accept-encoding", "gzip, deflate");
-            request.AddHeader("Host", "192.168.70.15:443");
             request.AddHeader("Postman-Token", "4e1afef7-dcfb-4613-9443-f0b774fb434c,52289e70-c6e4-4b0b-9bbb-3931d74c0600");
             request.AddHeader("Cache-Control", "no-cache");
             request.AddHeader("Accept", "*/*");
@@ -1131,6 +1132,8 @@ namespace ISO8583_Test
                     return string.Format("05");
                 case "204":
                     return string.Format("76");
+                case "206":
+                    return string.Format("51");
             }
             return string.Format("01");
 
@@ -1146,8 +1149,8 @@ namespace ISO8583_Test
             // host running the application.
             IPHostEntry ipHostInfo = Dns.Resolve(Dns.GetHostName());
             IPAddress ipAddress = ipHostInfo.AddressList[0];
-            IPEndPoint localEndPoint = new IPEndPoint(ipAddress,8500); //8500 IN TEST 9500 IN PRODUCTION
-
+            IPEndPoint localEndPoint = new IPEndPoint(ipAddress,cport); //8500 IN TEST 9500 IN PRODUCTION
+            Console.WriteLine($"Current ip :: {localEndPoint.Address}");
             // Create a TCP/IP socket.
             Socket listener = new Socket(AddressFamily.InterNetwork,
                 SocketType.Stream, ProtocolType.Tcp);
@@ -1199,12 +1202,12 @@ namespace ISO8583_Test
             {
                 //      //throw;
                 loginf.Info($"Unknown Exception:: {e.Message}");
-                ////      throw ;
-                
+                //throw;
+
             }
             Console.WriteLine("\nSomething Happened...");
-            //  goto started;
-          //  Console.ReadKey();
+            //goto started;
+            //Console.ReadKey();
         }
 
         static string cashwithdrawal(string accountnum, string transid,string amount,string cstamp)
@@ -1220,13 +1223,13 @@ namespace ISO8583_Test
             ServicePointManager.ServerCertificateValidationCallback +=
         (sender, certificate, chain, sslPolicyErrors) => true;
             string fullname = null;
-            var client = new RestClient("https://192.168.70.15:443/api/accounts/GetAccountBalance");
+            var client = new RestClient(URL+"/api/accounts/GetAccountBalance");
             var request = new RestRequest(Method.POST);
             request.AddHeader("cache-control", "no-cache");
             request.AddHeader("Connection", "keep-alive");
             request.AddHeader("content-length", "39");
             request.AddHeader("accept-encoding", "gzip, deflate");
-            request.AddHeader("Host", "192.168.70.15:443");
+          
             request.AddHeader("Postman-Token", "81717ea4-2db3-4778-8af1-8d78803b3f78,d3df76e4-0850-45d6-b004-4a9e9af4479c");
             request.AddHeader("Cache-Control", "no-cache");
             request.AddHeader("Accept", "*/*");
@@ -1243,9 +1246,14 @@ namespace ISO8583_Test
             {
                 return "14";
             }
+            //foreach (var bals in balance.data)
+            //{
+            //    bala = bals.balance.ToString().Replace(",", "");
+            //    clientnm = bals.clientName.ToString();
+            //}
             foreach (var nam in balance.data)
             {
-                fullname = (nam.clientName);
+                fullname = (nam.clientName.ToString());
 
             }
             return fullname;
